@@ -6,6 +6,7 @@ idf_component_register(
         "ui.c"
         "button.c"
         "power.c"
+        "power_idle.c"
         "splash.c"
         "fonts/font_tiempos_56.c"
         "fonts/font_tiempos_34.c"

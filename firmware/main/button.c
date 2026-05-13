@@ -1,6 +1,7 @@
 #include "button.h"
 #include "ble.h"
 #include "board.h"
+#include "power_idle.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -39,6 +40,7 @@ void button_tick(void) {
     if (cur && !btn_pressed) {
         btn_pressed    = true;
         press_start_us = esp_timer_get_time();
+        power_idle_kick();
     } else if (!cur && btn_pressed) {
         int64_t held_us = esp_timer_get_time() - press_start_us;
         btn_pressed = false;

@@ -1,5 +1,6 @@
 #include "display.h"
 #include "power.h"
+#include "power_idle.h"
 
 #include "esp_log.h"
 #include "esp_check.h"
@@ -167,6 +168,7 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
     data->point.x = (((uint16_t)(buf[0] & 0x0F)) << 8) | buf[1];
     data->point.y = (((uint16_t)(buf[2] & 0x0F)) << 8) | buf[3];
     data->state = LV_INDEV_STATE_PRESSED;
+    power_idle_kick();
 }
 
 static esp_err_t init_touch(void) {
@@ -259,5 +261,24 @@ void display_set_brightness(uint8_t level) {
     if (!io_handle) return;
     lvgl_port_lock(0);
     esp_lcd_panel_io_tx_param(io_handle, 0x51, &level, 1);
+    lvgl_port_unlock();
+}
+
+void display_panel_off(void) {
+    if (!io_handle) return;
+    lvgl_port_lock(0);
+    esp_lcd_panel_io_tx_param(io_handle, 0x28, NULL, 0);  // DISPOFF
+    esp_lcd_panel_io_tx_param(io_handle, 0x10, NULL, 0);  // SLPIN
+    lvgl_port_unlock();
+}
+
+void display_panel_on(void) {
+    if (!io_handle) return;
+    lvgl_port_lock(0);
+    esp_lcd_panel_io_tx_param(io_handle, 0x11, NULL, 0);  // SLPOUT
+    lvgl_port_unlock();
+    vTaskDelay(pdMS_TO_TICKS(120));                        // panel wake settle
+    lvgl_port_lock(0);
+    esp_lcd_panel_io_tx_param(io_handle, 0x29, NULL, 0);  // DISPON
     lvgl_port_unlock();
 }

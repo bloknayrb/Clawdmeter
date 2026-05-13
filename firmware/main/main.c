@@ -4,6 +4,7 @@
 #include "splash.h"
 #include "button.h"
 #include "power.h"
+#include "power_idle.h"
 #include "data.h"
 
 #include "esp_log.h"
@@ -48,6 +49,7 @@ void app_main(void) {
 
     ble_init();
     ESP_ERROR_CHECK(button_init());
+    power_idle_init();
 
     i2c_master_bus_handle_t i2c_bus = display_get_i2c_handle();
     if (i2c_bus) {
@@ -75,8 +77,14 @@ void app_main(void) {
 
         ble_tick();
         button_tick();
-        splash_tick();
-        ui_tick_anim();
+        power_idle_tick();
+
+        // Skip LVGL-invalidating animation work while the panel is off — keeps
+        // the LVGL task idle so light-sleep can collapse the inter-tick window.
+        if (!power_idle_is_off()) {
+            splash_tick();
+            ui_tick_anim();
+        }
 
         ble_state_t cur_state = ble_get_state();
         if (cur_state != last_ble) {
@@ -85,6 +93,7 @@ void app_main(void) {
         }
 
         if (ble_has_data()) {
+            power_idle_kick();
             const char *json = ble_get_data();
             if (ble_parse_usage(json, &usage)) {
                 ESP_LOGI(TAG, "Usage: session=%.1f%% weekly=%.1f%% status=%s",
