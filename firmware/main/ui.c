@@ -210,6 +210,10 @@ static lv_obj_t *make_screen_container(lv_obj_t *parent, bool opaque) {
     lv_obj_set_style_border_width(c, 0, 0);
     lv_obj_set_style_pad_all(c, 0, 0);
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+    // GESTURE_BUBBLE is set by default on every child obj, which makes gestures
+    // walk all the way up to the screen root — past our handler. Clearing it here
+    // makes the container the final gesture target.
+    lv_obj_clear_flag(c, LV_OBJ_FLAG_GESTURE_BUBBLE);
     return c;
 }
 
@@ -391,6 +395,10 @@ void ui_init(void) {
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    // Screen is scrollable by default; that suppresses gesture detection because
+    // LVGL's indev runs scroll-check before gesture-check. No screen content
+    // actually scrolls here, so clearing the flag is safe and lets swipes register.
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     init_battery_icons();
     init_usage_screen(scr);
