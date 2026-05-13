@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "driver/spi_master.h"
 #include "driver/i2c_master.h"
+#include "driver/gpio.h"
 #include "lvgl.h"
 
 static const char *TAG = "display";
@@ -20,6 +21,7 @@ static esp_lcd_panel_handle_t panel_handle = NULL;
 static esp_lcd_panel_io_handle_t io_handle = NULL;
 static i2c_master_bus_handle_t i2c_handle = NULL;
 static lv_display_t *lvgl_disp = NULL;
+static i2c_master_dev_handle_t touch_dev = NULL;
 
 // SH8601 init commands for 368x448 — from Waveshare C6-1.47 BSP
 static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
@@ -48,10 +50,11 @@ static void rounder_event_cb(lv_event_t *e) {
 static esp_err_t init_i2c(void) {
     if (i2c_handle) return ESP_OK;
     i2c_master_bus_config_t i2c_bus_conf = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .sda_io_num = BSP_I2C_SDA,
-        .scl_io_num = BSP_I2C_SCL,
-        .i2c_port = I2C_NUM_0,
+        .clk_source        = I2C_CLK_SRC_DEFAULT,
+        .sda_io_num        = BSP_I2C_SDA,
+        .scl_io_num        = BSP_I2C_SCL,
+        .i2c_port          = I2C_NUM_0,
+        .glitch_ignore_cnt = 7,
     };
     return i2c_new_master_bus(&i2c_bus_conf, &i2c_handle);
 }
@@ -134,11 +137,54 @@ static lv_display_t *init_lvgl_display(void) {
     return disp;
 }
 
+// FT3168/FT5x06 protocol: reg 0x02 = touch count, reg 0x03 = first touch (6 bytes).
+// Raw I2C reads bypass esp_lcd_panel_io_i2c which fails on this chip for unknown reasons
+// (writes work, reads don't — see init_touch where the driver init succeeds but reads fail).
+static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data) {
+    (void)indev;
+    data->state = LV_INDEV_STATE_RELEASED;
+    if (!touch_dev) return;
+
+    static int err_count = 0;
+
+    uint8_t reg = 0x02;
+    uint8_t count = 0;
+    esp_err_t r = i2c_master_transmit_receive(touch_dev, &reg, 1, &count, 1, 50);
+    if (r != ESP_OK) {
+        if (err_count++ < 3) ESP_LOGW(TAG, "touch read count failed: %s", esp_err_to_name(r));
+        return;
+    }
+    if (count == 0 || count > 5) return;
+
+    uint8_t buf[6];
+    reg = 0x03;
+    r = i2c_master_transmit_receive(touch_dev, &reg, 1, buf, 6, 50);
+    if (r != ESP_OK) {
+        if (err_count++ < 3) ESP_LOGW(TAG, "touch read coords failed: %s", esp_err_to_name(r));
+        return;
+    }
+
+    data->point.x = (((uint16_t)(buf[0] & 0x0F)) << 8) | buf[1];
+    data->point.y = (((uint16_t)(buf[2] & 0x0F)) << 8) | buf[3];
+    data->state = LV_INDEV_STATE_PRESSED;
+}
+
 static esp_err_t init_touch(void) {
     ESP_RETURN_ON_ERROR(init_i2c(), TAG, "I2C init failed");
 
+    // The FT3168's INT pin is open-drain; without a host-side pull-up it floats
+    // and the chip enters a stuck state where writes work but reads always fail
+    // with ESP_ERR_INVALID_STATE. Pull GPIO 15 high so INT idles high cleanly.
+    const gpio_config_t int_cfg = {
+        .pin_bit_mask = 1ULL << BSP_TOUCH_INT,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&int_cfg);
+
     if (power_enable_touch_rails(i2c_handle) == ESP_OK) {
-        // Poll until FT3168 ACKs on I2C (confirms power is up and chip is ready)
         ESP_LOGI(TAG, "Waiting for FT3168 at I2C 0x38...");
         esp_err_t probe = ESP_ERR_NOT_FOUND;
         for (int ms = 0; ms < 5000 && probe != ESP_OK; ms += 50) {
@@ -154,42 +200,23 @@ static esp_err_t init_touch(void) {
         ESP_LOGW(TAG, "ALDO enable failed — touch may not respond");
     }
 
-    const esp_lcd_touch_config_t tp_cfg = {
-        .x_max = DISP_WIDTH,
-        .y_max = DISP_HEIGHT,
-        .rst_gpio_num = BSP_TOUCH_RST,
-        .int_gpio_num = GPIO_NUM_NC,  // polling mode; GPIO15 ISR is for activity wakeup
-        .levels = {
-            .reset = 0,
-            .interrupt = 0,
-        },
-        .flags = {
-            .swap_xy = 0,
-            .mirror_x = 0,
-            .mirror_y = 0,
-        },
+    const i2c_device_config_t touch_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address  = 0x38,
+        .scl_speed_hz    = 100000,  // slower clock, more tolerant of weak pull-ups
     };
+    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(i2c_handle, &touch_cfg, &touch_dev),
+                        TAG, "Touch I2C device add failed");
 
-    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
-    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG();
-    tp_io_config.scl_speed_hz = 400000;
-    ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(i2c_handle, &tp_io_config, &tp_io_handle),
-                        TAG, "Touch panel IO init failed");
-
-    esp_lcd_touch_handle_t tp = NULL;
-    ESP_RETURN_ON_ERROR(esp_lcd_touch_new_i2c_ft5x06(tp_io_handle, &tp_cfg, &tp),
-                        TAG, "FT5x06 touch init failed");
-
-    const lvgl_port_touch_cfg_t touch_cfg = {
-        .disp = lvgl_disp,
-        .handle = tp,
-    };
-    lv_indev_t *touch_indev = lvgl_port_add_touch(&touch_cfg);
-    if (!touch_indev) {
-        ESP_LOGW(TAG, "lvgl_port_add_touch returned NULL");
+    if (lvgl_port_lock(0)) {
+        lv_indev_t *indev = lv_indev_create();
+        lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_read_cb(indev, touch_read_cb);
+        lv_indev_set_display(indev, lvgl_disp);
+        lvgl_port_unlock();
     }
 
-    ESP_LOGI(TAG, "Touch initialized (FT3168 via FT5x06 driver)");
+    ESP_LOGI(TAG, "Touch initialized (raw I2C 0x38)");
     return ESP_OK;
 }
 

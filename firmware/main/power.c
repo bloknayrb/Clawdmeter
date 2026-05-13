@@ -74,16 +74,25 @@ esp_err_t power_enable_touch_rails(i2c_master_bus_handle_t i2c_bus) {
     if (ret != ESP_OK) return ret;
 
     uint8_t buf[2];
-    buf[0] = 0x92; buf[1] = 0x1C;  // ALDO1 = 3.3V
-    i2c_master_transmit(axp_temp, buf, 2, 100);
-    buf[0] = 0x93; buf[1] = 0x1C;  // ALDO2 = 3.3V
-    i2c_master_transmit(axp_temp, buf, 2, 100);
+    esp_err_t r;
+
+    buf[0] = 0x92; buf[1] = 0x1C;
+    r = i2c_master_transmit(axp_temp, buf, 2, 100);
+    ESP_LOGI(TAG, "ALDO1 voltage write: %s", esp_err_to_name(r));
+
+    buf[0] = 0x93; buf[1] = 0x1C;
+    r = i2c_master_transmit(axp_temp, buf, 2, 100);
+    ESP_LOGI(TAG, "ALDO2 voltage write: %s", esp_err_to_name(r));
 
     uint8_t reg90 = 0, reg90_addr = 0x90;
-    if (i2c_master_transmit_receive(axp_temp, &reg90_addr, 1, &reg90, 1, 100) == ESP_OK) {
-        buf[0] = 0x90; buf[1] = reg90 | 0x03;  // enable ALDO1+ALDO2
-        i2c_master_transmit(axp_temp, buf, 2, 100);
+    r = i2c_master_transmit_receive(axp_temp, &reg90_addr, 1, &reg90, 1, 100);
+    ESP_LOGI(TAG, "ALDO enable read: %s (val=0x%02X)", esp_err_to_name(r), reg90);
+    if (r == ESP_OK) {
+        buf[0] = 0x90; buf[1] = reg90 | 0x03;
+        r = i2c_master_transmit(axp_temp, buf, 2, 100);
+        ESP_LOGI(TAG, "ALDO enable write: %s (val=0x%02X)", esp_err_to_name(r), buf[1]);
     }
+
     i2c_master_bus_rm_device(axp_temp);
     ESP_LOGI(TAG, "Touch rails enabled (ALDO1+ALDO2 = 3.3V)");
     return ESP_OK;
