@@ -1,6 +1,6 @@
 #include "button.h"
 #include "ble.h"
-#include "display.h"  // BSP_BTN_GPIO
+#include "board.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"

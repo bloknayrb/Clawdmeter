@@ -7,6 +7,11 @@
 // Initialize AXP2101 on the shared I2C bus. Enables the fuel gauge.
 esp_err_t power_init(i2c_master_bus_handle_t i2c_bus);
 
+// Enable ALDO1+ALDO2 at 3.3V to power the FT3168 touch controller.
+// Call from display init before touch driver init; power_init() need not
+// have been called yet — this opens and closes a temporary device handle.
+esp_err_t power_enable_touch_rails(i2c_master_bus_handle_t i2c_bus);
+
 // Battery state-of-charge (0–100). Returns -1 if no battery or read fails.
 int power_get_battery_pct(void);
 

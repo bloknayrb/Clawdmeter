@@ -374,9 +374,6 @@ static void init_splash_screen(lv_obj_t *scr) {
     lv_obj_add_event_cb(splash_container, tap_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(splash_container, swipe_event_cb, LV_EVENT_GESTURE, NULL);
     lv_obj_add_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
-
-    // splash_init creates the lv_image widget inside the container
-    // and pre-fills frame_buf — must be called while we hold the LVGL lock
     splash_init(splash_container);
 }
 

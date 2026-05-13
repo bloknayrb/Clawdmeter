@@ -1,15 +1,8 @@
 // splash.c — 20x20 pixel-art creature splash for the ESP32-C6 / 368x448 AMOLED.
 //
-// The Arduino S3 build allocated a 480x480x2 (460 KB) PSRAM canvas and blitted
-// the 20x20 cells scaled 24x. The C6 has no PSRAM and only 512 KB of SRAM, so
-// instead we keep a single 20x20 RGB565 source buffer (800 bytes, BSS) and let
-// LVGL upscale on the fly via lv_image_set_scale(256 * 18) with antialiasing
-// disabled (nearest-neighbor). That produces a 360x360 sprite, centered on the
-// 368x448 display.
-//
-// Each tick we expand the current animation frame from palette indices into
-// frame_buf and call lv_obj_invalidate(img) — the image data pointer never
-// changes, so LVGL re-reads the buffer on its next redraw pass.
+// frame_buf is a 800-byte BSS buffer; its address is fixed in frame_dsc for
+// the lifetime of the program. Each tick we overwrite the bytes and call
+// lv_obj_invalidate — the image data pointer never moves.
 
 #include "splash.h"
 #include "splash_animations.h"
@@ -19,7 +12,6 @@
 
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
-#include "esp_timer.h"
 #include "lvgl.h"
 
 static const char *TAG = "splash";
@@ -41,10 +33,6 @@ static uint16_t cur_anim       = 0;
 static uint16_t cur_frame      = 0;
 static uint32_t frame_start_ms = 0;
 static bool     active         = false;
-
-static inline uint32_t now_ms(void) {
-    return (uint32_t)(esp_timer_get_time() / 1000);
-}
 
 // Expand a single 20x20 frame (palette indices) into frame_buf as RGB565.
 // Pure CPU work on an SRAM-resident buffer — no LVGL calls, no lock needed.
@@ -99,7 +87,7 @@ void splash_init(lv_obj_t *parent) {
 
     cur_anim       = 0;
     cur_frame      = 0;
-    frame_start_ms = now_ms();
+    frame_start_ms = lv_tick_get();
     active         = false;
 
     if (SPLASH_ANIM_COUNT > 0) {
@@ -117,11 +105,12 @@ void splash_tick(void) {
     const splash_anim_def_t *a = &splash_anims[cur_anim];
     if (a->frame_count == 0) return;
 
+    uint32_t now  = lv_tick_get();
     uint16_t hold = a->holds[cur_frame];
-    if ((now_ms() - frame_start_ms) < hold) return;
+    if ((now - frame_start_ms) < hold) return;
 
     cur_frame      = (uint16_t)((cur_frame + 1) % a->frame_count);
-    frame_start_ms = now_ms();
+    frame_start_ms = now;
     render_current_frame();
 }
 
@@ -129,7 +118,7 @@ void splash_next(void) {
     if (SPLASH_ANIM_COUNT == 0) return;
     cur_anim       = (uint16_t)((cur_anim + 1) % SPLASH_ANIM_COUNT);
     cur_frame      = 0;
-    frame_start_ms = now_ms();
+    frame_start_ms = lv_tick_get();
     render_current_frame();
     ESP_LOGI(TAG, "splash: -> %s", splash_anims[cur_anim].name);
 }
@@ -137,7 +126,7 @@ void splash_next(void) {
 void splash_show(void) {
     if (img_obj == NULL) return;
     cur_frame      = 0;
-    frame_start_ms = now_ms();
+    frame_start_ms = lv_tick_get();
     render_current_frame();
     if (lvgl_port_lock(0)) {
         lv_obj_clear_flag(img_obj, LV_OBJ_FLAG_HIDDEN);

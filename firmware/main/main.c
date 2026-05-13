@@ -55,7 +55,9 @@ void app_main(void) {
 
     UsageData usage      = {0};
     ble_state_t last_ble = BLE_STATE_INIT;
-    int batt_tick        = 0;
+    int  batt_tick       = 0;
+    int  last_pct        = -2;
+    bool last_charging   = false;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -84,12 +86,15 @@ void app_main(void) {
             }
         }
 
-        // Battery poll at ~1Hz (50ms * 20 = 1000ms)
         if (++batt_tick >= 20) {
             batt_tick = 0;
-            int pct = power_get_battery_pct();
+            int  pct      = power_get_battery_pct();
             bool charging = power_is_vbus_present();
-            ui_update_battery(pct, charging);
+            if (pct != last_pct || charging != last_charging) {
+                last_pct      = pct;
+                last_charging = charging;
+                ui_update_battery(pct, charging);
+            }
         }
     }
 }

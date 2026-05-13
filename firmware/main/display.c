@@ -1,4 +1,5 @@
 #include "display.h"
+#include "power.h"
 
 #include "esp_log.h"
 #include "esp_check.h"
@@ -136,27 +137,7 @@ static lv_display_t *init_lvgl_display(void) {
 static esp_err_t init_touch(void) {
     ESP_RETURN_ON_ERROR(init_i2c(), TAG, "I2C init failed");
 
-    // Enable AXP2101 ALDO1+ALDO2 at 3.3V — power the FT3168 touch controller.
-    // These LDOs are OFF by default after cold boot; touch won't init without them.
-    i2c_master_dev_handle_t axp_temp = NULL;
-    const i2c_device_config_t axp_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = 0x34,
-        .scl_speed_hz = 400000,
-    };
-    if (i2c_master_bus_add_device(i2c_handle, &axp_cfg, &axp_temp) == ESP_OK) {
-        uint8_t buf[2];
-        buf[0] = 0x92; buf[1] = 0x1C;  // ALDO1 = 3.3V
-        i2c_master_transmit(axp_temp, buf, 2, 100);
-        buf[0] = 0x93; buf[1] = 0x1C;  // ALDO2 = 3.3V
-        i2c_master_transmit(axp_temp, buf, 2, 100);
-        uint8_t reg90 = 0, reg90_addr = 0x90;
-        if (i2c_master_transmit_receive(axp_temp, &reg90_addr, 1, &reg90, 1, 100) == ESP_OK) {
-            buf[0] = 0x90; buf[1] = reg90 | 0x03;  // enable ALDO1+ALDO2
-            i2c_master_transmit(axp_temp, buf, 2, 100);
-        }
-        i2c_master_bus_rm_device(axp_temp);
-
+    if (power_enable_touch_rails(i2c_handle) == ESP_OK) {
         // Poll until FT3168 ACKs on I2C (confirms power is up and chip is ready)
         ESP_LOGI(TAG, "Waiting for FT3168 at I2C 0x38...");
         esp_err_t probe = ESP_ERR_NOT_FOUND;
@@ -170,7 +151,7 @@ static esp_err_t init_touch(void) {
             ESP_LOGE(TAG, "FT3168 never responded after 5s — touch may not work");
         }
     } else {
-        ESP_LOGW(TAG, "Could not reach AXP2101 — touch ALDO rails may be off");
+        ESP_LOGW(TAG, "ALDO enable failed — touch may not respond");
     }
 
     const esp_lcd_touch_config_t tp_cfg = {
