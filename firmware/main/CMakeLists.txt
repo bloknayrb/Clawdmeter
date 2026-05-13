@@ -1,0 +1,30 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "display.c"
+        "ble.cpp"
+        "ui.c"
+        "fonts/font_tiempos_56.c"
+        "fonts/font_tiempos_34.c"
+        "fonts/font_styrene_48.c"
+        "fonts/font_styrene_28.c"
+        "fonts/font_styrene_24.c"
+        "fonts/font_styrene_20.c"
+        "fonts/font_styrene_16.c"
+        "fonts/font_styrene_14.c"
+        "fonts/font_styrene_12.c"
+        "fonts/font_mono_32.c"
+        "fonts/font_mono_18.c"
+    INCLUDE_DIRS "." "fonts"
+    REQUIRES
+        driver
+        esp_timer
+        nvs_flash
+        esp_lcd
+        esp_lcd_sh8601
+        lvgl__lvgl
+        espressif__esp_lvgl_port
+        espressif__esp_lcd_touch_ft5x06
+        h2zero__esp-nimble-cpp
+        json
+)
