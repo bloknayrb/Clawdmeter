@@ -1,6 +1,9 @@
 #include "display.h"
 #include "ble.h"
 #include "ui.h"
+#include "splash.h"
+#include "button.h"
+#include "power.h"
 #include "data.h"
 
 #include "esp_log.h"
@@ -15,7 +18,7 @@ static const char *TAG = "clawdmeter";
 
 void app_main(void) {
     ESP_LOGI(TAG, "=== Clawdmeter starting ===");
-    ESP_LOGI(TAG, "Free heap at boot: %lu bytes, largest internal block: %lu bytes",
+    ESP_LOGI(TAG, "Free heap at boot: %lu bytes, largest internal: %lu bytes",
              (unsigned long)esp_get_free_heap_size(),
              (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
@@ -25,7 +28,6 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    ESP_LOGI(TAG, "NVS initialized");
 
     ESP_ERROR_CHECK(display_init());
 
@@ -34,46 +36,60 @@ void app_main(void) {
     lvgl_port_unlock();
 
     ble_init();
-    ESP_LOGI(TAG, "BLE initialized — advertising as '%s' MAC=%s",
-             ble_get_device_name(), ble_get_mac_address());
+    ESP_ERROR_CHECK(button_init());
 
-    // Show initial BLE state on Bluetooth screen
+    i2c_master_bus_handle_t i2c_bus = display_get_i2c_handle();
+    if (i2c_bus) {
+        esp_err_t pwr_ret = power_init(i2c_bus);
+        if (pwr_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Power init failed — battery monitoring unavailable");
+        }
+    }
+
     ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
 
-    ESP_LOGI(TAG, "Free heap after full init: %lu bytes, largest internal: %lu bytes",
+    ESP_LOGI(TAG, "Free heap after init: %lu bytes, largest internal: %lu bytes",
              (unsigned long)esp_get_free_heap_size(),
              (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    ESP_LOGI(TAG, "=== Clawdmeter ready — advertising as '%s' ===", ble_get_device_name());
 
-    ESP_LOGI(TAG, "=== Clawdmeter ready ===");
-
-    UsageData usage = {0};
-    ble_state_t last_ble_state = BLE_STATE_INIT;
+    UsageData usage      = {0};
+    ble_state_t last_ble = BLE_STATE_INIT;
+    int batt_tick        = 0;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(50));
 
         ble_tick();
+        button_tick();
+        splash_tick();
         ui_tick_anim();
 
         ble_state_t cur_state = ble_get_state();
-        if (cur_state != last_ble_state) {
-            last_ble_state = cur_state;
+        if (cur_state != last_ble) {
+            last_ble = cur_state;
             ui_update_ble_status(cur_state, ble_get_device_name(), ble_get_mac_address());
         }
 
         if (ble_has_data()) {
             const char *json = ble_get_data();
             if (ble_parse_usage(json, &usage)) {
-                ESP_LOGI(TAG, "Usage: session=%.1f%% (reset %dm) weekly=%.1f%% (reset %dm) status=%s",
-                         usage.session_pct, usage.session_reset_mins,
-                         usage.weekly_pct, usage.weekly_reset_mins,
-                         usage.status);
+                ESP_LOGI(TAG, "Usage: session=%.1f%% weekly=%.1f%% status=%s",
+                         usage.session_pct, usage.weekly_pct, usage.status);
                 ui_update(&usage);
                 ble_send_ack();
             } else {
                 ESP_LOGW(TAG, "Failed to parse: %s", json);
                 ble_send_nack();
             }
+        }
+
+        // Battery poll at ~1Hz (50ms * 20 = 1000ms)
+        if (++batt_tick >= 20) {
+            batt_tick = 0;
+            int pct = power_get_battery_pct();
+            bool charging = power_is_vbus_present();
+            ui_update_battery(pct, charging);
         }
     }
 }

@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "splash.h"
 #include "theme.h"
 #include "icons.h"
 #include "ble.h"
@@ -372,14 +373,11 @@ static void init_splash_screen(lv_obj_t *scr) {
     splash_container = make_screen_container(scr, true);
     lv_obj_add_event_cb(splash_container, tap_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(splash_container, swipe_event_cb, LV_EVENT_GESTURE, NULL);
-
-    lv_obj_t *lbl = lv_label_create(splash_container);
-    lv_label_set_text(lbl, "Clawd");
-    lv_obj_set_style_text_font(lbl, &font_tiempos_56, 0);
-    lv_obj_set_style_text_color(lbl, COL_ACCENT, 0);
-    lv_obj_center(lbl);
-
     lv_obj_add_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+
+    // splash_init creates the lv_image widget inside the container
+    // and pre-fills frame_buf — must be called while we hold the LVGL lock
+    splash_init(splash_container);
 }
 
 static void init_battery_icons(void) {
@@ -470,10 +468,12 @@ void ui_show_screen(screen_t screen) {
     lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ble_container, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+    splash_hide();
 
     switch (screen) {
     case SCREEN_SPLASH:
         lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_HIDDEN);
+        splash_show();
         break;
     case SCREEN_USAGE:
         lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN);

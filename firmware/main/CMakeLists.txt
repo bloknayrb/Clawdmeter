@@ -4,6 +4,9 @@ idf_component_register(
         "display.c"
         "ble.cpp"
         "ui.c"
+        "button.c"
+        "power.c"
+        "splash.c"
         "fonts/font_tiempos_56.c"
         "fonts/font_tiempos_34.c"
         "fonts/font_styrene_48.c"
@@ -28,3 +31,4 @@ idf_component_register(
         h2zero__esp-nimble-cpp
         json
 )
+
