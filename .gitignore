@@ -2,6 +2,12 @@
 firmware/.pio/
 firmware/.vscode/
 
+# ESP-IDF build artifacts
+firmware/build/
+firmware/sdkconfig
+firmware/dependencies.lock
+firmware/managed_components/
+
 # OS
 .DS_Store
 
