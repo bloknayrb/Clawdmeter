@@ -22,6 +22,7 @@ idf_component_register(
     REQUIRES
         driver
         esp_timer
+        esp_pm
         nvs_flash
         esp_lcd
         esp_lcd_sh8601

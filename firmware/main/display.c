@@ -35,7 +35,7 @@ static const sh8601_lcd_init_cmd_t lcd_init_cmds[] = {
     {0x2A, (uint8_t[]){0x00, 0x00, 0x01, 0x6F}, 4, 0},        // CASET: 0-367
     {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0xBF}, 4, 0},        // RASET: 0-447
     {0x29, (uint8_t[]){0x00}, 0, 10},                          // DISPON
-    {0x51, (uint8_t[]){0xFF}, 1, 0},                           // Set brightness max
+    {0x51, (uint8_t[]){0x80}, 1, 0},                           // Set brightness ~50% (power)
 };
 
 // LVGL v9 rounder callback — SH8601 requires 2-pixel aligned draw areas

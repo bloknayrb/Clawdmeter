@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_lvgl_port.h"
+#include "esp_pm.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -28,6 +29,16 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    // DFS is auto-configured by PM_DFS_INIT_AUTO, but light-sleep stays off
+    // until we ask for it. Enabling it lets the system auto-sleep during
+    // long vTaskDelay windows in the main loop — the biggest CPU power win.
+    esp_pm_config_t pm_cfg = {
+        .max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+        .min_freq_mhz = 40,
+        .light_sleep_enable = true,
+    };
+    ESP_ERROR_CHECK(esp_pm_configure(&pm_cfg));
 
     ESP_ERROR_CHECK(display_init());
 
