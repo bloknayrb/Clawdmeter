@@ -22,6 +22,9 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
 
 # BLE controller modem sleep (lets the radio sleep between connection events)
 CONFIG_BT_LE_SLEEP_ENABLE=y
+# Required by BT controller when BT_LE_SLEEP_ENABLE + tickless idle are on —
+# powers down MAC + baseband during PHY-disabled windows. Costs ~2 KB RAM.
+CONFIG_ESP_PHY_MAC_BB_PD=y
 
 # LVGL (added here so managed_components resolves on first build;
 # not wired into REQUIRES until Phase 2)
